@@ -1,36 +1,43 @@
 package raft
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 type logTopic string
 
 const (
-	dClient  logTopic = "CLNT"
-	dCommit  logTopic = "CMIT"
-	dDrop    logTopic = "DROP"
-	dError   logTopic = "ERRO"
-	dInfo    logTopic = "INFO"
+	dVote    logTopic = "VOTE"
 	dLeader  logTopic = "LEAD"
+	dTerm    logTopic = "TERM"
+	dTimer   logTopic = "TIMR"
 	dLog     logTopic = "LOG1"
 	dLog2    logTopic = "LOG2"
+	dCommit  logTopic = "CMIT"
 	dPersist logTopic = "PERS"
 	dSnap    logTopic = "SNAP"
-	dTerm    logTopic = "TERM"
+	dDrop    logTopic = "DROP"
+	dInfo    logTopic = "INFO"
+	dError   logTopic = "ERRO"
+	dClient  logTopic = "CLNT"
 	dTest    logTopic = "TEST"
-	dTimer   logTopic = "TIMR"
 	dTrace   logTopic = "TRCE"
-	dVote    logTopic = "VOTE"
 	dWarn    logTopic = "WARN"
 )
 
 // Set via environment variable: DEBUG=1 ./kvnode ...
 var Debug = os.Getenv("DEBUG") == "1"
 
-func DPrintf(format string, a ...interface{}) {
+func DPrintf(topic logTopic, format string, a ...interface{}) {
 	if Debug {
-		log.Printf(format, a...)
+		relativeTime := time.Since(ProgramStart).Microseconds() / 100
+
+		debugString := fmt.Sprintf("%v %s ", relativeTime, topic)
+		fullDebug := debugString + format
+		//have to spread interface slices
+		log.Printf(fullDebug, a...)
 	}
 }

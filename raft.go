@@ -10,15 +10,19 @@ package raft
 import (
 	//	"bytes"
 	"bytes"
+	"encoding/gob"
+	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"net/rpc"
 	"slices"
 	"sync"
+
 	"time"
 
-	//	"6.5840/labgob"
-	"6.5840/labgob"
+	"github.com/tobiabidoye/raft/persister"
+	"github.com/tobiabidoye/raft/raftapi"
 )
 
 var ProgramStart = time.Now()
@@ -34,16 +38,17 @@ const (
 type LogValue struct {
 	Term int
 	//interface which implements zero methods, empty interface, esssentially a template
-	Item interface{}
+	Item any
 }
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
-	mu        sync.Mutex        // Lock to protect shared access to this peer's state
-	peers     []*rpc.Client     // RPC end points of all peers
-	persister *tester.Persister // Object to hold this peer's persisted state
-	me        int               // this peer's index into peers[]
-
+	mu        sync.Mutex    // Lock to protect shared access to this peer's state
+	peers     []*rpc.Client // RPC end points of all peers
+	ports     []string
+	persister *persister.DiskPersister // Object to hold this peer's persisted state
+	me        int                      // this peer's index into peers[]
+	connMu    sync.Mutex
 	// Your data here (3A, 3B, 3C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
@@ -68,7 +73,7 @@ type Raft struct {
 	signalAE          chan struct{}
 }
 
-func (rf *Raft) startRpcServer(port string) error {
+func (rf *Raft) StartRpcServer(port string) error {
 
 	server := rpc.NewServer()
 	if err := server.Register(rf); err != nil {
@@ -116,6 +121,52 @@ func (rf *Raft) GetState() (int, bool) {
 	return term, isleader
 }
 
+func (rf *Raft) SendRpc(server int, args any, method string, reply any) bool {
+	client, err := rf.GetPeerConn(server)
+	if err != nil {
+		return false
+	}
+
+	err = client.Call(method, args, reply)
+	if err != nil {
+		rf.connMu.Lock()
+		if rf.peers[server] == client {
+			client.Close()
+			rf.peers[server] = nil
+		}
+		rf.connMu.Unlock()
+		return false
+	}
+	return true
+}
+
+func (rf *Raft) GetPeerConn(server int) (*rpc.Client, error) {
+	if server < 0 || server >= len(rf.ports) {
+		return nil, fmt.Errorf("peer index %d out of bounds (max %d)", server, len(rf.ports)-1)
+	}
+
+	if server == rf.me {
+		return nil, fmt.Errorf("node %d cannot dial itself", rf.me)
+	}
+	rf.connMu.Lock()
+	defer rf.connMu.Unlock()
+	if rf.peers[server] != nil {
+		return rf.peers[server], nil
+	}
+	port := rf.ports[server]
+
+	//dial that specific port
+	//dial with timeout
+	conn, err := net.DialTimeout("tcp", port, 200*time.Millisecond)
+	if err != nil {
+		return nil, err
+	}
+
+	newClient := rpc.NewClient(conn)
+	rf.peers[server] = newClient
+	return newClient, nil
+}
+
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
@@ -127,14 +178,13 @@ func (rf *Raft) persist() {
 	// Your code here (3C).
 	// Example:
 	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
 	// e.Encode(rf.xxx)
 	// e.Encode(rf.yyy)
 	// raftstate := w.Bytes()
 	// rf.persister.Save(raftstate, nil)
 
 	buf := new(bytes.Buffer)
-	enc := labgob.NewEncoder(buf)
+	enc := gob.NewEncoder(buf)
 	enc.Encode(rf.log)
 	enc.Encode(rf.currentTerm)
 	enc.Encode(rf.votedFor)
@@ -153,7 +203,6 @@ func (rf *Raft) readPersist(data []byte) {
 	// Your code here (3C).
 	// Example:
 	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
 	// var xxx
 	// var yyy
 	// if d.Decode(&xxx) != nil ||
@@ -165,7 +214,7 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 
 	buf := bytes.NewBuffer(data)
-	dec := labgob.NewDecoder(buf)
+	dec := gob.NewDecoder(buf)
 	var oldLog []LogValue
 	var oldTerm int
 	var votedFor int
@@ -275,12 +324,12 @@ type AppendEntriesResponse struct {
 
 // rpc handler
 func (rf *Raft) SendAppendEntries(server int, args *AppendEntriesRequest, reply *AppendEntriesResponse) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	return ok
+	return rf.SendRpc(server, args, "Raft.AppendEntries", reply)
+	/* err := rf.peers[server].Call("Raft.AppendEntries", args, reply) */
 }
 
 // rpc handler helper
-func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesResponse) {
+func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesResponse) error {
 	//now for vote requests
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -292,7 +341,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesRe
 		DPrintf(dDrop, "S%d rejected AE from S%d: stale term", rf.me, args.LeaderId)
 		reply.Term = rf.currentTerm
 		reply.Success = false
-		return
+		return nil
 	}
 
 	prevInd := rf.ConvertLogicalToPhysical(args.PrevLogIndex)
@@ -311,7 +360,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesRe
 		DPrintf(dDrop, "S%d rejected AE from S%d: stale previous index", rf.me, args.LeaderId)
 		reply.Term = rf.currentTerm
 		reply.Success = false
-		return
+		return nil
 	}
 
 	//send back for decrementing
@@ -326,7 +375,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesRe
 		reply.XTerm = -1
 		reply.XIndex = -1
 		reply.XLen = (len(rf.log)) + rf.lastIncludedIndex
-		return
+		return nil
 	}
 
 	//divergence in logs
@@ -345,7 +394,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesRe
 		reply.XIndex = rf.GetTermFirstEntry(rf.log[prevInd].Term)
 
 		reply.XLen = (len(rf.log)) + rf.lastIncludedIndex
-		return
+		return nil
 	}
 
 	for i := 0; i < len(args.Entries); i++ {
@@ -379,6 +428,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesRe
 	reply.Success = true
 	reply.Term = rf.currentTerm
 	DPrintf(dLog2, "S%d AE success prevIdx=%d logLen=%d commitIndex=%d", rf.me, args.PrevLogIndex, len(rf.log), rf.commitIndex)
+	return nil
 }
 
 func (rf *Raft) GetTermFirstEntry(term int) int {
@@ -591,7 +641,7 @@ func (rf *Raft) AppendEntriesRoutine() {
 }
 
 // example RequestVote RPC handler.
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
 	// Your code here (3A, 3B).
 
 	rf.mu.Lock()
@@ -603,7 +653,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
 		DPrintf(dDrop, "S%d denied vote to S%d: stale term (their T%d < my T%d)", rf.me, args.CandidateId, args.Term, rf.currentTerm)
-		return
+		return nil
 	} else if args.Term > rf.currentTerm {
 		rf.currentRole = FOLLOWER
 		rf.currentTerm = args.Term
@@ -614,7 +664,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
 		reply.VoteGranted = false
 		DPrintf(dDrop, "S%d denied vote to S%d: already voted for S%d", rf.me, args.CandidateId, rf.votedFor)
-		return
+		return nil
 	}
 
 	//accounting for the dummy entry
@@ -628,7 +678,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if args.LastLogTerm < curLogTerm {
 		reply.VoteGranted = false
 		DPrintf(dDrop, "S%d denied vote to S%d: log not up-to-date", rf.me, args.CandidateId)
-		return
+		return nil
 	}
 
 	//index check here
@@ -636,7 +686,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		//length of log is wrong
 		DPrintf(dDrop, "S%d denied vote to S%d: log not up-to-date", rf.me, args.CandidateId)
 		reply.VoteGranted = false
-		return
+		return nil
 	}
 	//now we know log is at least as up to date
 	//we can grant vote here
@@ -650,6 +700,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.allowedDuration = time.Duration(durationInt) * time.Millisecond
 	rf.currentRole = FOLLOWER
 	rf.persist()
+
+	return nil
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -681,9 +733,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // the struct itself.
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	//ok so this is blocking
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-
-	return ok
+	return rf.SendRpc(server, args, "Raft.RequestVote", reply)
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -903,7 +953,7 @@ type InstallSnapshotResponse struct {
 	Term int
 }
 
-func (rf *Raft) InstallSnapshotHandler(args *InstallSnapshotRequest, reply *InstallSnapshotResponse) {
+func (rf *Raft) InstallSnapshotHandler(args *InstallSnapshotRequest, reply *InstallSnapshotResponse) error {
 
 	rf.mu.Lock()
 	DPrintf(dInfo, "S%d InstallSnapshotHandler called from S%d", rf.me, args.LeaderId)
@@ -911,7 +961,7 @@ func (rf *Raft) InstallSnapshotHandler(args *InstallSnapshotRequest, reply *Inst
 		reply.Term = rf.currentTerm
 		DPrintf(dError, "Leader term is not up to date or leaders last index not up to date me: %d, currentTerm: %d, leaderTerm %d, leaderLastIndex: %d, mylastIndex %d", rf.me, rf.currentTerm, args.Term, args.LastIncludedIndex, rf.lastIncludedIndex)
 		rf.mu.Unlock()
-		return
+		return nil
 	}
 
 	if args.Term > rf.currentTerm {
@@ -961,11 +1011,11 @@ func (rf *Raft) InstallSnapshotHandler(args *InstallSnapshotRequest, reply *Inst
 	//update highest applied index
 	//unlock so that the whole system does not freeze due to just one channel send
 	/* rf.applyCh <- msg */
+	return nil
 }
 
 func (rf *Raft) SendInstallSnapshot(server int, args *InstallSnapshotRequest, reply *InstallSnapshotResponse) bool {
-	ok := rf.peers[server].Call("Raft.InstallSnapshotHandler", args, reply)
-	return ok
+	return rf.SendRpc(server, args, "Raft.InstallSnapshotHandler", reply)
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -978,10 +1028,10 @@ func (rf *Raft) SendInstallSnapshot(server int, args *InstallSnapshotRequest, re
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-func Make(peers []*labrpc.ClientEnd, me int,
-	persister *tester.Persister, applyCh chan raftapi.ApplyMsg) raftapi.Raft {
+func Make(ports []string, me int,
+	persister *persister.DiskPersister, applyCh chan raftapi.ApplyMsg, port string) raftapi.Raft {
 	rf := &Raft{}
-	rf.peers = peers
+	rf.ports = ports
 	rf.persister = persister
 	rf.me = me
 	rf.lastRpcContact = time.Now()
@@ -996,12 +1046,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.signalAE = make(chan struct{}, 1)
 	//append dummy value to the log 0th index
 	rf.log = append(rf.log, LogValue{Term: -1, Item: "dummy"})
-	rf.applyCh = make(chan raftapi.ApplyMsg)
+	rf.applyCh = applyCh
 	rf.lastIncludedIndex = 0
 	rf.lastIncludedTerm = 0
+	rf.ports = ports
+	rf.peers = make([]*rpc.Client, len(port))
 	DPrintf(dInfo, "S%d started at T%d", rf.me, rf.currentTerm)
 	// Your initialization code here (3A, 3B, 3C).
 
+	if err := rf.StartRpcServer(port); err != nil {
+		log.Fatalf("Failed to start Raft RPC listener on port %s: %v", port, err)
+	}
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	rf.commitIndex = rf.lastIncludedIndex
