@@ -6,9 +6,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/tobiabidoye/raft"
-	"github.com/tobiabidoye/raft/persister"
-	"github.com/tobiabidoye/raft/raftapi"
+	"github.com/tobiabidoye/distributed-raft/persister"
+	"github.com/tobiabidoye/distributed-raft/raft"
+	"github.com/tobiabidoye/distributed-raft/raftapi"
 )
 
 /* func RegisterGobTypes() {
