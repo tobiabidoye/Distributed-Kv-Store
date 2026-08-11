@@ -16,6 +16,7 @@ import (
 	"math/rand"
 	"net"
 	"net/rpc"
+	"runtime"
 	"slices"
 	"sync"
 
@@ -192,7 +193,7 @@ func (rf *Raft) persist() {
 	enc.Encode(rf.lastIncludedTerm)
 	raftState := buf.Bytes()
 	rf.persister.Save(raftState, rf.curSnapshot)
-	DPrintf(dInfo, "persisted raft state size: %d bytes, log len: %d", rf.persister.RaftStateSize(), len(rf.log))
+	DPrintf(dInfo, "persisted raft state size: %d bytes, log len: %d, term: %d", rf.persister.RaftStateSize(), len(rf.log), rf.currentTerm)
 }
 
 // restore previously persisted state.
@@ -640,7 +641,6 @@ func (rf *Raft) AppendEntriesRoutine() {
 	}
 }
 
-// example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
 	// Your code here (3A, 3B).
 
@@ -787,6 +787,8 @@ func (rf *Raft) ticker() {
 		if rf.currentRole != LEADER && elapsedTime > rf.allowedDuration {
 			//then send list of append entries rpcs to peers
 			// vote for yourself
+
+			DPrintf(dTimer, "S%d election timeout, becoming candidate at T%d, time passed: %s, allowed duration: %s, num goroutines: %d", rf.me, rf.currentTerm, elapsedTime, rf.allowedDuration, runtime.NumGoroutine())
 			rf.votedFor = rf.me
 			rf.currentTerm += 1
 			rf.currentRole = CANDIDATE
@@ -794,7 +796,7 @@ func (rf *Raft) ticker() {
 			//reset allowed duration for current term
 			durationInt := rand.Intn(800-400) + 400
 			rf.allowedDuration = time.Millisecond * time.Duration(durationInt)
-			DPrintf(dTimer, "S%d election timeout, becoming candidate at T%d", rf.me, rf.currentTerm)
+			rf.lastRpcContact = time.Now()
 			lastTerm := 0
 
 			// if len(rf.log) > 0 {
@@ -825,9 +827,9 @@ func (rf *Raft) ticker() {
 				}
 
 				curVoteReply := RequestVoteReply{}
-				go func(peerNum int, voteReply RequestVoteReply) {
+				go func(peerNum int, voteReply RequestVoteReply, voteReq RequestVoteArgs) {
 					//do this synchronously
-					rf.sendRequestVote(peerNum, &curVoteReq, &voteReply)
+					rf.sendRequestVote(peerNum, &voteReq, &voteReply)
 					rf.mu.Lock()
 
 					if voteReply.Term > rf.currentTerm {
@@ -857,12 +859,13 @@ func (rf *Raft) ticker() {
 						rf.mu.Unlock()
 						return
 					}
-
 					if (numVotes) >= (len(rf.peers)/2)+1 {
 						//you have majority at this point become leader
 						DPrintf(dLeader, "S%d became leader at T%d with %d votes", rf.me, rf.currentTerm, numVotes)
 						rf.currentRole = LEADER
 						//initialize match indices to be zero
+						rf.lastRpcContact = time.Now()
+
 						for i := 0; i < len(rf.matchIndex); i++ {
 
 							if i == rf.me {
@@ -875,13 +878,19 @@ func (rf *Raft) ticker() {
 						}
 
 						rf.persist()
+						select {
+						//signal leader to send append entries
+						case rf.signalAE <- struct{}{}:
+						default:
+						}
+
 						rf.mu.Unlock()
 
 						return
 					}
 					//lock when exiting a function like so
 					rf.mu.Unlock()
-				}(ind, curVoteReply)
+				}(ind, curVoteReply, curVoteReq)
 
 			}
 		} else {
@@ -1040,8 +1049,6 @@ func Make(ports []string, me int,
 	rf.currentTerm = 0
 	rf.currentRole = FOLLOWER
 	rf.votedFor = -1
-	rf.matchIndex = make([]int, len(rf.peers))
-	rf.nextIndex = make([]int, len(rf.peers))
 	rf.log = make([]LogValue, 0)
 	rf.signalAE = make(chan struct{}, 1)
 	//append dummy value to the log 0th index
@@ -1050,7 +1057,10 @@ func Make(ports []string, me int,
 	rf.lastIncludedIndex = 0
 	rf.lastIncludedTerm = 0
 	rf.ports = ports
-	rf.peers = make([]*rpc.Client, len(port))
+	rf.peers = make([]*rpc.Client, len(ports))
+
+	rf.matchIndex = make([]int, len(rf.peers))
+	rf.nextIndex = make([]int, len(rf.peers))
 	DPrintf(dInfo, "S%d started at T%d", rf.me, rf.currentTerm)
 	// Your initialization code here (3A, 3B, 3C).
 
