@@ -52,6 +52,7 @@ func (rf *Raft) StartRpcServer(port string) error {
 	}
 
 	l, err := net.Listen("tcp", port)
+	rf.listener = l
 	if err != nil {
 		return err
 	}

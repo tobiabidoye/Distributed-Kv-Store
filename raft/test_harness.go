@@ -11,7 +11,7 @@ import (
 type TestCluster struct {
 	t          *testing.T
 	n          int
-	peers      []*raftapi.Raft
+	peers      []raftapi.Raft
 	applyChans []chan raftapi.ApplyMsg
 	ports      []string
 }
@@ -20,7 +20,7 @@ func MakeTestCluster(t *testing.T, n int) *TestCluster {
 	ports := []string{}
 	start := 8000
 	end := start + n
-	peers := []*raftapi.Raft{}
+	peers := []raftapi.Raft{}
 	filePath := t.TempDir()
 	applyChans := []chan raftapi.ApplyMsg{}
 	for port := start; port < end; port++ {
@@ -35,7 +35,7 @@ func MakeTestCluster(t *testing.T, n int) *TestCluster {
 		curPersister := persister.NewDiskPersister(filePath, i)
 		curPeer := Make(ports, i, curPersister, applyCh, ports[i])
 		applyChans = append(applyChans, applyCh)
-		peers = append(peers, &curPeer)
+		peers = append(peers, curPeer)
 	}
 
 	return &TestCluster{
@@ -46,4 +46,13 @@ func MakeTestCluster(t *testing.T, n int) *TestCluster {
 		ports:      ports,
 	}
 
+}
+
+func (test *TestCluster) KillCluster() {
+	for _, p := range test.peers {
+		//kill each peer
+		p.KillProcess()
+	}
+
+	test.t.Log("Raft processes killed!")
 }

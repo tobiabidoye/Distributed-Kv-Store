@@ -6,11 +6,12 @@ import (
 	"encoding/gob"
 	"log"
 	"math/rand"
+	"net"
 	"net/rpc"
 	"runtime"
 	"slices"
 	"sync"
-
+	"sync/atomic"
 	"time"
 
 	"github.com/tobiabidoye/distributed-raft/persister"
@@ -57,6 +58,8 @@ type Raft struct {
 	curSnapshot       []byte
 	applyCh           chan raftapi.ApplyMsg
 	signalAE          chan struct{}
+	dead              int32 //to track whether raft instance has been killed
+	listener          net.Listener
 }
 
 func (rf *Raft) GetLastIncludedIndex() int {
@@ -179,7 +182,10 @@ func (rf *Raft) GetTermFirstEntry(term int) int {
 
 func (rf *Raft) AppendEntriesRoutine() {
 	//send rpc every 10 milliseconds
-	for {
+	for !rf.Killed() {
+		if rf.Killed() {
+			return
+		}
 		select {
 		case <-rf.signalAE:
 		//dont hold lock and sleep for 100ms
@@ -207,7 +213,14 @@ func (rf *Raft) AppendEntriesRoutine() {
 
 					installSnapshotResp := InstallSnapshotResponse{}
 					go func(curIndex int, snapArgs InstallSnapshotRequest, snapResp InstallSnapshotResponse) {
+						if rf.Killed() {
+							return
+						}
 						ok := rf.SendInstallSnapshot(curIndex, &snapArgs, &snapResp)
+
+						if rf.Killed() {
+							return
+						}
 						DPrintf(dInfo, "S%d InstallSnapshot RPC to S%d ok=%v", rf.me, curIndex, ok)
 						if !ok {
 							return
@@ -271,11 +284,18 @@ func (rf *Raft) AppendEntriesRoutine() {
 				//then after
 				appendEntriesResp := AppendEntriesResponse{}
 				//unlock prior to rpc
-				go func(serverId int, args AppendEntriesRequest, resp AppendEntriesResponse) {
+				go func(serverId int, args AppendEntriesRequest, resp AppendEntriesResponse, savedTerm int) {
 					//dont lock before rpc call
 					//loop for decrementing index
 					//send in loop and decremen
+					if rf.Killed() {
+						return
+					}
 					ok := rf.SendAppendEntries(serverId, &args, &resp)
+
+					if rf.Killed() {
+						return
+					}
 					rf.mu.Lock()
 					//only case we have to not worry about success
 					defer rf.mu.Unlock()
@@ -327,13 +347,13 @@ func (rf *Raft) AppendEntriesRoutine() {
 						//now for the optimization
 						if resp.XTerm == -1 {
 							//logical space since i converted this in append entries handler
-							rf.nextIndex[ind] = resp.XLen
+							rf.nextIndex[serverId] = resp.XLen
 						} else if rf.GetTermFirstEntry(resp.XTerm) == -1 {
 							//works since xindex is also converted to logical space unless i am wrong
 							if resp.XIndex != 0 {
-								rf.nextIndex[ind] = resp.XIndex
+								rf.nextIndex[serverId] = resp.XIndex
 							} else {
-								rf.nextIndex[ind] = 1
+								rf.nextIndex[serverId] = 1
 							}
 						} else if rf.GetTermFirstEntry(resp.XTerm) != -1 {
 							term := resp.XTerm
@@ -350,17 +370,17 @@ func (rf *Raft) AppendEntriesRoutine() {
 							}
 
 							if tempInd != -1 {
-								rf.nextIndex[ind] = rf.lastIncludedIndex + tempInd + 1
+								rf.nextIndex[serverId] = rf.lastIncludedIndex + tempInd + 1
 							} else {
 								//also logical index i think
-								rf.nextIndex[ind] = resp.XIndex
+								rf.nextIndex[serverId] = resp.XIndex
 							}
 						}
 						return
 					}
 					//dont update term
 
-				}(ind, appendEntriesReq, appendEntriesResp)
+				}(ind, appendEntriesReq, appendEntriesResp, savedTerm)
 
 			}
 			//unlock prior to goroutines scheduled
@@ -398,14 +418,19 @@ func (rf *Raft) Start(command any) (int, int, bool) {
 
 func (rf *Raft) ticker() {
 	DPrintf(dInfo, "S%d ticker started", rf.me)
-	for true {
+	for !rf.Killed() {
 		// Your code here (3A)
 		// Check if a leader election should be started.
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
+		//
 		ms := 50 + (rand.Int63() % 300)
 		//lock to proect shared state
+
+		if rf.Killed() {
+			return
+		}
 		rf.mu.Lock()
 		elapsedTime := time.Since(rf.lastRpcContact)
 
@@ -454,9 +479,14 @@ func (rf *Raft) ticker() {
 				curVoteReply := RequestVoteReply{}
 				go func(peerNum int, voteReply RequestVoteReply, voteReq RequestVoteArgs) {
 					//do this synchronously
+					if rf.Killed() {
+						return
+					}
 					rf.sendRequestVote(peerNum, &voteReq, &voteReply)
+					if rf.Killed() {
+						return
+					}
 					rf.mu.Lock()
-
 					if voteReply.Term > rf.currentTerm {
 						DPrintf(dTerm, "S%d stepping down (RV reply T%d > my T%d)", rf.me, voteReply.Term, rf.currentTerm)
 						rf.currentRole = FOLLOWER
@@ -526,7 +556,7 @@ func (rf *Raft) ticker() {
 }
 
 func (rf *Raft) Apply(applyCh chan raftapi.ApplyMsg) {
-	for {
+	for !rf.Killed() {
 		rf.mu.Lock()
 
 		if rf.lastApplied < rf.lastIncludedIndex {
@@ -542,6 +572,9 @@ func (rf *Raft) Apply(applyCh chan raftapi.ApplyMsg) {
 			//unlock so that the whole system does not freeze due to just one channel send
 			DPrintf(dInfo, "Apply sending snapshot lastApplied=%d lastIncludedIndex=%d", rf.lastApplied, rf.lastIncludedIndex)
 			rf.mu.Unlock()
+			if rf.Killed() {
+				return
+			}
 			applyCh <- msg
 		} else if rf.commitIndex > rf.lastApplied {
 			//gather into local slice
@@ -555,6 +588,10 @@ func (rf *Raft) Apply(applyCh chan raftapi.ApplyMsg) {
 			prevCommitIndex := rf.commitIndex
 			rf.lastApplied = prevCommitIndex
 			rf.mu.Unlock()
+
+			if rf.Killed() {
+				return
+			}
 			for ind, val := range toApply {
 				msg := raftapi.ApplyMsg{
 					CommandValid: true,
@@ -574,6 +611,18 @@ func (rf *Raft) Apply(applyCh chan raftapi.ApplyMsg) {
 	}
 }
 
+func (rf *Raft) KillProcess() bool {
+	DPrintf(dInfo, "Killing Raft Process")
+	atomic.StoreInt32(&rf.dead, 1)
+	if rf.listener != nil {
+		rf.listener.Close()
+	}
+	return true
+}
+
+func (rf *Raft) Killed() bool {
+	return atomic.LoadInt32(&rf.dead) == 1
+}
 func Make(ports []string, me int,
 	persister *persister.DiskPersister, applyCh chan raftapi.ApplyMsg, port string) raftapi.Raft {
 	rf := &Raft{}
@@ -609,6 +658,7 @@ func Make(ports []string, me int,
 	rf.commitIndex = rf.lastIncludedIndex
 	rf.lastApplied = rf.lastIncludedIndex
 	rf.curSnapshot = persister.ReadSnapshot()
+	rf.dead = 0 //show as not dead with number 0
 	// start ticker goroutine to start elections
 	go rf.ticker()
 	go rf.AppendEntriesRoutine()
