@@ -82,21 +82,7 @@ func (rf *Raft) GetState() (int, bool) {
 	return term, isleader
 }
 
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
-// before you've implemented snapshots, you should pass nil as the
-// second argument to persister.Save().
-// after you've implemented snapshots, pass the current snapshot
-// (or nil if there's not yet a snapshot).
 func (rf *Raft) persist() {
-	// Your code here (3C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
 
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
@@ -110,7 +96,6 @@ func (rf *Raft) persist() {
 	DPrintf(dInfo, "persisted raft state size: %d bytes, log len: %d, term: %d", rf.persister.RaftStateSize(), len(rf.log), rf.currentTerm)
 }
 
-// restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
@@ -195,9 +180,6 @@ func (rf *Raft) GetTermFirstEntry(term int) int {
 func (rf *Raft) AppendEntriesRoutine() {
 	//send rpc every 10 milliseconds
 	for {
-		/* sleepTime := time.Duration(100) */
-		//only send rpc if leader
-		/* rf.mu.Unlock() */
 		select {
 		case <-rf.signalAE:
 		//dont hold lock and sleep for 100ms
@@ -390,7 +372,7 @@ func (rf *Raft) AppendEntriesRoutine() {
 	}
 }
 
-func (rf *Raft) Start(command interface{}) (int, int, bool) {
+func (rf *Raft) Start(command any) (int, int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
