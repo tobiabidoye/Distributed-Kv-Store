@@ -3,6 +3,7 @@ package raft
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/tobiabidoye/distributed-raft/persister"
 	"github.com/tobiabidoye/distributed-raft/raftapi"
@@ -55,4 +56,30 @@ func (test *TestCluster) KillCluster() {
 	}
 
 	test.t.Log("Raft processes killed!")
+}
+
+func (test *TestCluster) CheckOneLeader() int {
+	//test with 3 leaders
+
+	leaderId := -1
+	leaderCount := 0
+	start := time.Now()
+	for time.Since(start) < time.Second*3 {
+
+		for ind, peer := range test.peers {
+			_, isLeader := peer.GetState()
+			if isLeader {
+				leaderId = ind
+				leaderCount++
+			}
+		}
+
+		if leaderCount == 1 {
+			return leaderId
+		}
+
+		time.Sleep(time.Millisecond * 50)
+	}
+	test.t.Fatalf("expected 1 leader, but consensus failed to stabilize within 3s")
+	return -1
 }
