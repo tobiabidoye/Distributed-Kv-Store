@@ -61,12 +61,15 @@ func (test *TestCluster) KillCluster() {
 func (test *TestCluster) CheckOneLeader() int {
 	//test with 3 leaders
 
-	leaderId := -1
-	leaderCount := 0
 	start := time.Now()
 	for time.Since(start) < time.Second*3 {
 
+		leaderId := -1
+		leaderCount := 0
 		for ind, peer := range test.peers {
+			if peer.Killed() {
+				continue
+			}
 			_, isLeader := peer.GetState()
 			if isLeader {
 				leaderId = ind

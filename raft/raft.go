@@ -77,6 +77,9 @@ func (rf *Raft) GetState() (int, bool) {
 	var isleader bool
 	// Your code here (3A).
 	//
+	if rf.Killed() {
+		return rf.currentTerm, false
+	}
 	if rf.currentRole == LEADER {
 		isleader = true
 	}

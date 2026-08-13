@@ -41,3 +41,7 @@ func DPrintf(topic logTopic, format string, a ...interface{}) {
 		log.Printf(fullDebug, a...)
 	}
 }
+
+func (rf *Raft) GetId() int {
+	return rf.me
+}
