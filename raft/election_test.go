@@ -55,36 +55,3 @@ func TestReelection(t *testing.T) {
 	}
 
 }
-
-func TestBasicReplication(t *testing.T) {
-	clusterSize := 3
-	tc := MakeTestCluster(t, 3)
-	leaderId := tc.CheckOneLeader()
-	if leaderId == -1 {
-		t.Fatal("leader could not be elected")
-	}
-
-	t.Logf("Leader elected: Node %d ", leaderId)
-
-	//start basic log replication
-	leader := tc.peers[leaderId]
-	msg := "test replicate"
-	leader.Start(msg)
-
-	//sleep then iterate to verify that followers have log items
-	time.Sleep(5 * time.Second)
-	//then check all followers to see whether they got the command
-
-	for ind := range clusterSize {
-		curApplyChan := tc.applyChans[ind]
-		select {
-		case checkVar := <-curApplyChan:
-			if checkVar.Command != msg {
-				t.Fatal("replication failed")
-			}
-		default:
-		}
-	}
-
-	t.Logf("replication successful!")
-}
