@@ -1,1 +1,3 @@
-.bin
+raft_logs/
+*.bin
+*.tmp.idea/
