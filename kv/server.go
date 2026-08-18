@@ -3,6 +3,7 @@ package kv
 import (
 	"bytes"
 	"errors"
+	"log"
 
 	"sync"
 
@@ -120,7 +121,9 @@ func (kv *KVServer) Restore(data []byte) {
 }
 
 func (kv *KVServer) Get(args *kvrpc.GetArgs, reply *kvrpc.GetReply) error {
+	log.Println("submit called")
 	err, tempResp := kv.rsm.Submit(*args)
+	log.Println("after submit was called")
 	if err == kvrpc.ErrWrongLeader {
 		reply.Err = kvrpc.ErrWrongLeader
 		return nil
@@ -143,9 +146,9 @@ func (kv *KVServer) Put(args *kvrpc.PutArgs, reply *kvrpc.PutReply) error {
 	// Your code here. Use kv.rsm.Submit() to submit args
 	// You can use go's type casts to turn the any return value
 	// of Submit() into a PutReply: rep.(rpc.PutReply)
-
+	log.Println("prior to submit call in put")
 	err, tempResp := kv.rsm.Submit(*args)
-
+	log.Println("after submit call in put")
 	if err == kvrpc.ErrWrongLeader {
 		reply.Err = kvrpc.ErrWrongLeader
 		return nil
@@ -164,7 +167,7 @@ func (kv *KVServer) Put(args *kvrpc.PutArgs, reply *kvrpc.PutReply) error {
 
 // StartKVServer() and MakeRSM() must return quickly, so they should
 // start goroutines for any long-running work.
-func StartKVServer(ports []string, me int, persister *persister.DiskPersister, maxraftstate int, numClients int) *KVServer {
+func StartKVServer(ports []string, me int, persister *persister.DiskPersister, maxraftstate int, numClients int, server *rpc.Server) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	gob.Register(rsm.Op{})
@@ -176,8 +179,10 @@ func StartKVServer(ports []string, me int, persister *persister.DiskPersister, m
 	kv := &KVServer{me: me}
 	kv.dedupTracker = make(map[FilterKey]VersionErr)
 	kv.kvStore = make(map[string]ValueVersion)
-	rpc.Register(kv)
-	kv.rsm = rsm.MakeRSM(ports, me, persister, maxraftstate, kv, numClients)
+	if err := server.Register(kv); err != nil {
+		log.Fatalf("failed to register KVServer RPC: %v", err)
+	}
+	kv.rsm = rsm.MakeRSM(ports, me, persister, maxraftstate, kv, numClients, server)
 	// You may need initialization code here.
 	return kv
 }

@@ -1,6 +1,7 @@
 package kv
 
 import (
+	"log"
 	"math/rand/v2"
 	"net/rpc"
 	"time"
@@ -47,8 +48,10 @@ func (ck *Clerk) Get(key string) (string, kvrpc.Tversion, kvrpc.Err) {
 		reply := kvrpc.GetReply{}
 		client, err := ck.getClient(ck.leader)
 		if err == nil {
-
+			log.Println("prior to client rpc get call")
 			callErr := client.Call("KVServer.Get", &args, &reply)
+
+			log.Println("after client rpc get call")
 			if callErr == nil {
 
 				if reply.Err == kvrpc.ErrNoKey {
@@ -80,8 +83,10 @@ func (ck *Clerk) Put(key string, value string, version kvrpc.Tversion) kvrpc.Err
 		reply := kvrpc.PutReply{}
 		client, err := ck.getClient(ck.leader)
 		if err == nil {
-
+			log.Println("prior to client rpc put call")
 			callErr := client.Call("KVServer.Put", &args, &reply)
+			log.Println("after client rpc put call")
+
 			if callErr == nil {
 
 				if isRetry == false && reply.Err == kvrpc.ErrVersion {

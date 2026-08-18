@@ -627,7 +627,7 @@ func (rf *Raft) Killed() bool {
 	return atomic.LoadInt32(&rf.dead) == 1
 }
 func Make(ports []string, me int,
-	persister *persister.DiskPersister, applyCh chan raftapi.ApplyMsg, port string) raftapi.Raft {
+	persister *persister.DiskPersister, applyCh chan raftapi.ApplyMsg, port string, server *rpc.Server) raftapi.Raft {
 	rf := &Raft{}
 	rf.ports = ports
 	rf.persister = persister
@@ -653,8 +653,8 @@ func Make(ports []string, me int,
 	DPrintf(dInfo, "S%d started at T%d", rf.me, rf.currentTerm)
 	// Your initialization code here (3A, 3B, 3C).
 
-	if err := rf.StartRpcServer(port); err != nil {
-		log.Fatalf("Failed to start Raft RPC listener on port %s: %v", port, err)
+	if err := rf.RegisterRpc(server); err != nil {
+		log.Println("failed to register raft server for net/rpc")
 	}
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())

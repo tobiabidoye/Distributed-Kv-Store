@@ -2,7 +2,7 @@ package rsm
 
 import (
 	"errors"
-	"fmt"
+	"log"
 	"math/rand"
 	"net/rpc"
 	"sync"
@@ -47,7 +47,7 @@ type MapValue struct {
 	Cmd          Op
 }
 
-func MakeRSM(ports []string, me int, persister *persister.DiskPersister, maxraftstate int, sm StateMachine, numClients int) *RSM {
+func MakeRSM(ports []string, me int, persister *persister.DiskPersister, maxraftstate int, sm StateMachine, numClients int, server *rpc.Server) *RSM {
 	rsm := &RSM{
 		me:           me,
 		maxraftstate: maxraftstate,
@@ -55,7 +55,7 @@ func MakeRSM(ports []string, me int, persister *persister.DiskPersister, maxraft
 		sm:           sm,
 	}
 
-	rsm.rf = raft.Make(ports, me, persister, rsm.applyCh, ports[me])
+	rsm.rf = raft.Make(ports, me, persister, rsm.applyCh, ports[me], server)
 	rsm.db = make(map[int]MapValue)
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) > 0 {
@@ -80,7 +80,7 @@ func (rsm *RSM) Submit(req any) (kvrpc.Err, any) {
 
 	// your code here
 	//
-
+	log.Println("submit called!")
 	rsm.mu.Lock()
 	curId := rand.Uint32()
 	safeReq := Op{Me: rsm.me, Id: int(curId), Req: req}
@@ -103,6 +103,7 @@ func (rsm *RSM) Submit(req any) (kvrpc.Err, any) {
 	for {
 		select {
 		case tempCmd := <-cmdChan:
+			log.Println("submit exitting!")
 			if tempCmd == ErrNotLeader {
 				return kvrpc.ErrWrongLeader, nil
 			}
@@ -112,6 +113,8 @@ func (rsm *RSM) Submit(req any) (kvrpc.Err, any) {
 			//lock the channel
 			select {
 			case tempCmd := <-cmdChan:
+
+				log.Println("submit exitting!")
 				if tempCmd == ErrNotLeader {
 					return kvrpc.ErrWrongLeader, nil
 				}
@@ -122,6 +125,8 @@ func (rsm *RSM) Submit(req any) (kvrpc.Err, any) {
 			newTerm, isLeader := rsm.rf.GetState()
 			if newTerm != startTerm || !isLeader {
 				//clean up the index for that entry since no longer leader
+
+				log.Println("submit exitting!")
 				delete(rsm.db, commitIndex)
 				rsm.mu.Unlock()
 				return kvrpc.ErrWrongLeader, nil
@@ -137,6 +142,7 @@ func (rsm *RSM) Reader() {
 	//gets applychannel to apply to state machine and calls doop
 	for {
 		applyMsg, ok := <-rsm.applyCh
+		log.Printf("[RSM %d] apply received: index=%d snapshot=%v command=%#v", rsm.me, applyMsg.CommandIndex, applyMsg.SnapshotValid, applyMsg.Command)
 		if !ok {
 			return
 		}
@@ -180,7 +186,7 @@ func (rsm *RSM) Reader() {
 			} else {
 				tempSend = toSend
 			}
-
+			log.Printf("[RSM %d] signaling waiter for index=%d", rsm.me, applyMsg.CommandIndex)
 			rsm.mu.Unlock()
 			curValue.ReaderSignal <- tempSend
 			continue

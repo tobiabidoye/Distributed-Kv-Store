@@ -2,38 +2,16 @@ package main
 
 import (
 	/* "encoding/gob" */
-	"fmt"
 	"log"
+	"net"
+	"net/rpc"
 	"os"
 	"strconv"
 
+	"github.com/tobiabidoye/distributed-raft/cmd/util"
 	"github.com/tobiabidoye/distributed-raft/kv"
 	"github.com/tobiabidoye/distributed-raft/persister"
 )
-
-/* func RegisterGobTypes() {
-gob.Register(rsm.Op{})
-gob.Register(rpc.PutArgs{})
-gob.Register(rpc.GetArgs{})
-gob.Register(rpc.PutReply{})
-gob.Register(rpc.GetReply{})
-gob.Register(FilterKey{})
-gob.Register(VersionErr{})
-gob.Register(ValueVersion{})
-*/
-
-func dynamicPorts(numPeers int) []string {
-	ports := []string{}
-	start := 8000
-	end := start + numPeers
-
-	for port := start; port < end; port++ {
-		addr := fmt.Sprintf("127.0.0.1:%d", port)
-		ports = append(ports, addr)
-	}
-
-	return ports
-}
 
 func main() {
 	/* RegisterGobTypes() */
@@ -52,9 +30,22 @@ func main() {
 
 	curPersister := persister.NewDiskPersister(filePath, nodeId)
 	//unsure where peers list will come from
-	ports := dynamicPorts(3)
+	ports := util.DynamicPorts(3)
 	/* kv.StartKVServer(ports, nodeId, curPersister, -1, len(ports)) */
-	kv.StartKVServer(ports, nodeId, curPersister, -1, len(ports))
+	rpcServer := rpc.NewServer()
+	kv.StartKVServer(ports, nodeId, curPersister, -1, len(ports), rpcServer)
+	listener, err := net.Listen("tcp", ports[nodeId])
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.Printf("KVServer Node %d running on %s", nodeId, ports[nodeId])
-	select {}
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+
+		go rpcServer.ServeConn(conn)
+	}
 }

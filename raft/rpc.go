@@ -44,30 +44,8 @@ type AppendEntriesResponse struct {
 	XLen    int
 }
 
-func (rf *Raft) StartRpcServer(port string) error {
-
-	server := rpc.NewServer()
-	if err := server.Register(rf); err != nil {
-		return err
-	}
-
-	l, err := net.Listen("tcp", port)
-	rf.listener = l
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				return
-			}
-			go server.ServeConn(conn)
-		}
-	}()
-
-	return nil
+func (rf *Raft) RegisterRpc(server *rpc.Server) error {
+	return server.Register(rf)
 }
 
 type InstallSnapshotRequest struct {
