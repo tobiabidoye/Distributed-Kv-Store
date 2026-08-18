@@ -1,7 +1,9 @@
 package raft
 
 import (
-	"fmt"
+	"log"
+	"net"
+	"net/rpc"
 	"testing"
 	"time"
 
@@ -15,44 +17,82 @@ type TestCluster struct {
 	peers      []raftapi.Raft
 	applyChans []chan raftapi.ApplyMsg
 	ports      []string
+	listeners  []net.Listener
+}
+
+func startRpcConnection(rpcServer *rpc.Server, listener net.Listener, nodeId int) {
+	log.Printf("KVServer Node %d running on %s", nodeId, listener.Addr().String())
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+
+		go rpcServer.ServeConn(conn)
+	}
+}
+
+func dynamicPorts(t *testing.T, numCluster int) ([]string, []net.Listener) {
+	t.Helper()
+
+	ports := []string{}
+	listeners := []net.Listener{}
+
+	for range numCluster {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to allocate test port: %v", err)
+		}
+
+		ports = append(ports, listener.Addr().String())
+		listeners = append(listeners, listener)
+	}
+
+	return ports, listeners
 }
 
 func MakeTestCluster(t *testing.T, n int) *TestCluster {
-	ports := []string{}
-	start := 8000
-	end := start + n
 	peers := []raftapi.Raft{}
 	filePath := t.TempDir()
 	applyChans := []chan raftapi.ApplyMsg{}
-	for port := start; port < end; port++ {
-		addr := fmt.Sprintf("127.0.0.1:%d", port)
-		ports = append(ports, addr)
-	}
+	ports, listeners := dynamicPorts(t, n)
 
-	//then start up the cluster of raft peers
 	for i := range n {
+		rpcServer := rpc.NewServer()
 
 		applyCh := make(chan raftapi.ApplyMsg, 100)
 		curPersister := persister.NewDiskPersister(filePath, i)
-		curPeer := Make(ports, i, curPersister, applyCh, ports[i])
+		curPeer := Make(ports, i, curPersister, applyCh, ports[i], rpcServer)
+
+		go startRpcConnection(rpcServer, listeners[i], i)
+
 		applyChans = append(applyChans, applyCh)
 		peers = append(peers, curPeer)
 	}
 
-	return &TestCluster{
+	cluster := &TestCluster{
 		t:          t,
 		n:          n,
 		peers:      peers,
 		applyChans: applyChans,
 		ports:      ports,
+		listeners:  listeners,
 	}
 
+	t.Cleanup(func() {
+		cluster.KillCluster()
+	})
+
+	return cluster
 }
 
 func (test *TestCluster) KillCluster() {
 	for _, p := range test.peers {
-		//kill each peer
 		p.KillProcess()
+	}
+
+	for _, listener := range test.listeners {
+		_ = listener.Close()
 	}
 
 	test.t.Log("Raft processes killed!")
