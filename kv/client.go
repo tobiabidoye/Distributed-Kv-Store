@@ -11,15 +11,13 @@ import (
 
 type Clerk struct {
 	servers []string
-	leader  int // last successful leader (index into servers[])
-	// You can add to this struct.
+	leader  int
 	clerkId int64
 	clients []*rpc.Client
 }
 
 func MakeClerk(servers []string) *Clerk {
 	ck := &Clerk{servers: servers, clerkId: rand.Int64(), leader: 0, clients: make([]*rpc.Client, len(servers))}
-	// You'll have to add code here.
 	return ck
 }
 

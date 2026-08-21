@@ -36,10 +36,9 @@ type RSM struct {
 	applyCh      chan raftapi.ApplyMsg
 	maxraftstate int // snapshot if log grows this big
 	sm           StateMachine
-	// Your definitions here.
-	db          map[int]MapValue
-	curTerm     int
-	LastApplied int
+	db           map[int]MapValue
+	curTerm      int
+	LastApplied  int
 }
 
 type MapValue struct {
@@ -74,12 +73,6 @@ func (rsm *RSM) Raft() raftapi.Raft {
 // try again.
 func (rsm *RSM) Submit(req any) (kvrpc.Err, any) {
 
-	// Submit creates an Op structure to run a command through Raft;
-	// for example: op := Op{Me: rsm.me, Id: id, Req: req}, where req
-	// is the argument to Submit and id is a unique id for the op.
-
-	// your code here
-	//
 	log.Println("submit called!")
 	rsm.mu.Lock()
 	curId := rand.Uint32()

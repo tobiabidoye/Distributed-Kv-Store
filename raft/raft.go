@@ -1,7 +1,6 @@
 package raft
 
 import (
-	//	"bytes"
 	"bytes"
 	"encoding/gob"
 	"log"
@@ -34,7 +33,7 @@ type LogValue struct {
 }
 
 type Raft struct {
-	mu              sync.Mutex    // Lock to protect shared access to this peer's state
+	mu              sync.Mutex
 	peers           []*rpc.Client // RPC end points of all peers
 	ports           []string
 	persister       *persister.DiskPersister // Object to hold this peer's persisted state
@@ -75,7 +74,6 @@ func (rf *Raft) GetState() (int, bool) {
 	defer rf.mu.Unlock()
 	var term int
 	var isleader bool
-	// Your code here (3A).
 	//
 	if rf.Killed() {
 		return rf.currentTerm, false
@@ -103,7 +101,7 @@ func (rf *Raft) persist() {
 }
 
 func (rf *Raft) readPersist(data []byte) {
-	if data == nil || len(data) < 1 { // bootstrap without any state?
+	if data == nil || len(data) < 1 {
 		return
 	}
 	buf := bytes.NewBuffer(data)
@@ -147,7 +145,6 @@ func (rf *Raft) PersistBytes() int {
 }
 
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (3D).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -405,7 +402,6 @@ func (rf *Raft) Start(command any) (int, int, bool) {
 		return -1, -1, isLeader
 	}
 
-	// Your code here (3B).
 	index := rf.lastIncludedIndex + len(rf.log)
 	term := rf.currentTerm
 	rf.log = append(rf.log, LogValue{Term: rf.currentTerm, Item: command})
@@ -422,7 +418,6 @@ func (rf *Raft) Start(command any) (int, int, bool) {
 func (rf *Raft) ticker() {
 	DPrintf(dInfo, "S%d ticker started", rf.me)
 	for !rf.Killed() {
-		// Your code here (3A)
 		// Check if a leader election should be started.
 
 		// pause for a random amount of time between 50 and 350
@@ -651,7 +646,6 @@ func Make(ports []string, me int,
 	rf.matchIndex = make([]int, len(rf.peers))
 	rf.nextIndex = make([]int, len(rf.peers))
 	DPrintf(dInfo, "S%d started at T%d", rf.me, rf.currentTerm)
-	// Your initialization code here (3A, 3B, 3C).
 
 	if err := rf.RegisterRpc(server); err != nil {
 		log.Println("failed to register raft server for net/rpc")

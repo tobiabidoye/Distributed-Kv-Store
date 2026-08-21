@@ -16,10 +16,8 @@ import (
 )
 
 type KVServer struct {
-	me  int
-	rsm *rsm.RSM
-
-	// Your definitions here.
+	me           int
+	rsm          *rsm.RSM
 	dedupTracker map[FilterKey]VersionErr
 	kvStore      map[string]ValueVersion
 	mu           sync.Mutex
@@ -40,7 +38,6 @@ type ValueVersion struct {
 }
 
 func (kv *KVServer) DoOp(req any) any {
-	// Your code here
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	switch r := req.(type) {
@@ -62,10 +59,6 @@ func (kv *KVServer) DoOp(req any) any {
 			return kvrpc.PutReply{Err: kvrpc.OK}
 		}
 
-		/* if r.Version < rpc.Tversion(kv.kvStore[r.Key].versionNo) {
-			kv.dedupTracker[FilterKey{key: r.Key, clientId: r.ClerkId}] = VersionErr{versionNo: int(r.Version), Err: rpc.OK}
-			return rpc.PutReply{Err: rpc.OK}
-		} */
 		//cant store non zero version that does not exist
 		return kvrpc.PutReply{Err: kvrpc.ErrVersion}
 	case kvrpc.GetArgs:
@@ -80,7 +73,6 @@ func (kv *KVServer) DoOp(req any) any {
 }
 
 func (kv *KVServer) Snapshot() []byte {
-	// Your code here
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	buf := new(bytes.Buffer)
@@ -97,7 +89,6 @@ func (kv *KVServer) Snapshot() []byte {
 }
 
 func (kv *KVServer) Restore(data []byte) {
-	// Your code here
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
@@ -143,9 +134,6 @@ func (kv *KVServer) Get(args *kvrpc.GetArgs, reply *kvrpc.GetReply) error {
 }
 
 func (kv *KVServer) Put(args *kvrpc.PutArgs, reply *kvrpc.PutReply) error {
-	// Your code here. Use kv.rsm.Submit() to submit args
-	// You can use go's type casts to turn the any return value
-	// of Submit() into a PutReply: rep.(rpc.PutReply)
 	log.Println("prior to submit call in put")
 	err, tempResp := kv.rsm.Submit(*args)
 	log.Println("after submit call in put")
@@ -165,11 +153,7 @@ func (kv *KVServer) Put(args *kvrpc.PutArgs, reply *kvrpc.PutReply) error {
 	return nil
 }
 
-// StartKVServer() and MakeRSM() must return quickly, so they should
-// start goroutines for any long-running work.
 func StartKVServer(ports []string, me int, persister *persister.DiskPersister, maxraftstate int, numClients int, server *rpc.Server) *KVServer {
-	// call labgob.Register on structures you want
-	// Go's RPC library to marshall/unmarshall.
 	gob.Register(rsm.Op{})
 	gob.Register(kvrpc.PutArgs{})
 	gob.Register(kvrpc.GetArgs{})
@@ -183,7 +167,6 @@ func StartKVServer(ports []string, me int, persister *persister.DiskPersister, m
 		log.Fatalf("failed to register KVServer RPC: %v", err)
 	}
 	kv.rsm = rsm.MakeRSM(ports, me, persister, maxraftstate, kv, numClients, server)
-	// You may need initialization code here.
 	return kv
 }
 
