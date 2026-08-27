@@ -11,7 +11,7 @@ This project is experimental and educational. It is not production grade.
 ## Key Features & Architecture
 - **Consensus Engine:** Raft protocol handling leader election, log replication, and safety guarantees.
 - **State Compaction:** Snapshotting and fast log recovery to maintain bounded state size under heavy write traffic.
-- **RPC Communication:** Concurrent network transport layer utilizing the net/rpc package, Go channels, mutexes, and condition variables.
+- **RPC Communication:** Concurrent network transport layer utilizing the net/rpc package, Go channels and mutexes.
 
 ## Roadmap & Active Development
 - [x] Raft leader election

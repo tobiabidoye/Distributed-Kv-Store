@@ -42,6 +42,9 @@ func TestBasicReplication(t *testing.T) {
 	t.Logf("replication successful across all nodes")
 }
 
+func TestReplicationDeadLeader(t *testing.T) {
+
+}
 func TestReplicationDeadFollower(t *testing.T) {
 	clusterSize := 5
 	tc := MakeTestCluster(t, 5)
