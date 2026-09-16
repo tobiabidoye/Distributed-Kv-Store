@@ -43,6 +43,64 @@ func TestBasicReplication(t *testing.T) {
 }
 
 func TestReplicationDeadLeader(t *testing.T) {
+	clusterSize := 5
+	tc := MakeTestCluster(t, clusterSize)
+	leaderId := tc.CheckOneLeader()
+	if leaderId == -1 {
+		t.Fatal("leader could not be elected")
+	}
+	leader := tc.peers[leaderId]
+	msg := "test replicate"
+	leader.Start(msg)
+	for ind := range clusterSize {
+		curApplyChan := tc.applyChans[ind]
+		select {
+		case checkVar := <-curApplyChan:
+			if checkVar.Command != msg {
+				t.Fatal("replication failed")
+			}
+			if !checkVar.CommandValid {
+				t.Fatalf("Node %d applied invalid command message", ind)
+			}
+		case <-time.After(2 * time.Second):
+			// If a follower fails to apply, the test MUST fail here
+			t.Fatalf("Node %d failed to apply command within 2s", ind)
+		}
+	}
+
+	t.Logf("first pass successful killing leader")
+	leader.KillProcess()
+	t.Logf("leaeder killed election starting")
+	time.Sleep(time.Second * 3)
+	newId := tc.CheckOneLeader()
+	if newId == leaderId || newId == -1 {
+		t.Fatalf("New Leader Has Not Been Elected New Leader Replication Failed")
+	}
+
+	//now replicate a new value
+	newLeader := tc.peers[newId]
+	msg2 := "second msg"
+	newLeader.Start(msg2)
+
+	for ind := range clusterSize {
+		if ind == leaderId {
+			continue
+		}
+		curApplyChan := tc.applyChans[ind]
+		select {
+		case checkVar := <-curApplyChan:
+			if checkVar.Command != msg2 {
+				t.Fatal("replication failed")
+			}
+			if !checkVar.CommandValid {
+				t.Fatalf("Node %d applied invalid command message", ind)
+			}
+		case <-time.After(2 * time.Second):
+			// If a follower fails to apply, the test MUST fail here
+			t.Fatalf("Node %d failed to apply command within 2s", ind)
+		}
+	}
+	t.Logf("replication successful across both runs")
 
 }
 func TestReplicationDeadFollower(t *testing.T) {

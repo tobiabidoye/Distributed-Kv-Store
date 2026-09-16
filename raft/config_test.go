@@ -95,6 +95,8 @@ func (test *TestCluster) KillCluster() {
 		_ = listener.Close()
 	}
 
+	time.Sleep(50 * time.Millisecond)
+
 	test.t.Log("Raft processes killed!")
 }
 
