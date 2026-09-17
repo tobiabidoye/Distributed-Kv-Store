@@ -21,7 +21,7 @@ This project is experimental and educational. It is not production grade.
 - [x] Replicated key value state machine
 - [x] Basic client `Put` / `Get`
 - [x] Shared RPC server for Raft and KV services
-- [ ] Expanded KV test suite
+- [x] Expanded KV test suite
 - [ ] Fault injection tests
 - [ ] Linearizability checking with Porcupine
 - [ ] Documentation and demo polish
