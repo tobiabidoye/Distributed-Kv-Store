@@ -9,22 +9,21 @@ import (
 	"github.com/tobiabidoye/distributed-raft/persister"
 )
 
-func StartTestKvServer(t *testing.T, nodeId int, baseDir string) {
+func StartTestKvServer(t *testing.T, nodeId int, baseDir string, numCluster int) (*KVServer, func()) {
 	//generate servers on dynamic ports 3 peers
 	//will generate exact 3 ports
 	filePath := baseDir
 
-	ports := util.DynamicPorts(3)
+	ports := util.DynamicPorts(numCluster)
 	curPersister := persister.NewDiskPersister(filePath, nodeId)
 	rpcServer := rpc.NewServer()
 	kvSrv := StartKVServer(ports, nodeId, curPersister, -1, len(ports), rpcServer)
 
-	t.Cleanup(func() {
-		kvSrv.rsm.Raft().KillProcess()
-	})
-
 	listener, err := net.Listen("tcp", ports[nodeId])
 	if err != nil {
+		t.Cleanup(func() {
+			kvSrv.rsm.Raft().KillProcess()
+		})
 		t.Fatalf("failed to listen on %s: %v", ports[nodeId], err)
 	}
 
@@ -39,9 +38,14 @@ func StartTestKvServer(t *testing.T, nodeId int, baseDir string) {
 			go rpcServer.ServeConn(conn)
 		}
 	}()
-	//auto teardown of resources
+	//auto teadown of resources
+	cleanupFunc := func() {
+		kvSrv.rsm.Raft().KillProcess()
+		listener.Close()
+	}
 	t.Cleanup(
-		func() {
-			listener.Close()
-		})
+		cleanupFunc,
+	)
+
+	return kvSrv, cleanupFunc
 }
