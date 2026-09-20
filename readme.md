@@ -25,7 +25,7 @@ This project is experimental and educational. It is not production grade.
 - [ ] Fault injection tests
 - [ ] Linearizability checking with Porcupine
 - [ ] Documentation and demo polish
-
+- [ ] Lsm Tree Storage Engine Extentsion
 ## Architecture
 
 Each node runs both a Raft peer and a key value server.
