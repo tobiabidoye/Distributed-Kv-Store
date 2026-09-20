@@ -10,6 +10,7 @@ type DiskPersister struct {
 	mu           sync.Mutex
 	statePath    string
 	snapshotPath string
+	DisableSync  bool
 }
 
 func NewDiskPersister(dataDir string, nodeID int) *DiskPersister {
@@ -43,7 +44,9 @@ func (dp *DiskPersister) AtmomicWrite(path string, data []byte) {
 	}
 
 	f.Write(data)
-	f.Sync()
+	if !dp.DisableSync {
+		f.Sync()
+	}
 	f.Close()
 	os.Rename(tmpPath, path)
 }

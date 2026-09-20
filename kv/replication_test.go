@@ -10,7 +10,8 @@ import (
 )
 
 func TestReplicationKv(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir, dirCleanup := createTestDir(t)
+	defer dirCleanup()
 	for i := range 3 {
 		StartTestKvServer(t, i, baseDir, 3, -1)
 	}
@@ -31,7 +32,8 @@ func TestReplicationKv(t *testing.T) {
 
 func TestOverWriteKv(t *testing.T) {
 
-	baseDir := t.TempDir()
+	baseDir, dirCleanup := createTestDir(t)
+	defer dirCleanup()
 	for i := range 3 {
 		StartTestKvServer(t, i, baseDir, 3, -1)
 	}
@@ -68,7 +70,8 @@ func TestFollowerRecovery(t *testing.T) {
 
 	//we need to somehow ensure that a follower that has been killed recovered and has all entries
 	//we will do this by killing nodes until our killed node is leader and then querying it
-	baseDir := t.TempDir()
+	baseDir, dirCleanup := createTestDir(t)
+	defer dirCleanup()
 	servers := []*KVServer{}
 	stopFuncs := []func(){}
 	for i := range 3 {
@@ -76,6 +79,14 @@ func TestFollowerRecovery(t *testing.T) {
 		servers = append(servers, server)
 		stopFuncs = append(stopFuncs, stopFunc)
 	}
+
+	defer func() {
+		for _, stop := range stopFuncs {
+			if stop != nil {
+				stop()
+			}
+		}
+	}()
 
 	ports := util.DynamicPorts(3)
 	myClerk := MakeClerk(ports)
@@ -126,7 +137,8 @@ func TestFollowerRecovery(t *testing.T) {
 
 // create a clust
 func TestSnapshotKv(t *testing.T) {
-	baseDir := t.TempDir()
+	baseDir, cleanup := createTestDir(t)
+	defer cleanup()
 	servers := []*KVServer{}
 	stopFuncs := []func(){}
 	for i := range 3 {
