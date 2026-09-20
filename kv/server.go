@@ -98,8 +98,6 @@ func (kv *KVServer) Restore(data []byte) {
 
 	buf := bytes.NewBuffer(data)
 	dec := gob.NewDecoder(buf)
-	/* kv.dedupTracker = make(map[FilterKey]VersionErr)
-	kv.kvStore = make(map[string]ValueVersion) */
 
 	tempStore := make(map[string]ValueVersion)
 	tempDedup := make(map[FilterKey]VersionErr)

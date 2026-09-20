@@ -9,7 +9,7 @@ import (
 	"github.com/tobiabidoye/distributed-raft/persister"
 )
 
-func StartTestKvServer(t *testing.T, nodeId int, baseDir string, numCluster int) (*KVServer, func()) {
+func StartTestKvServer(t *testing.T, nodeId int, baseDir string, numCluster int, maxRaftState int) (*KVServer, func()) {
 	//generate servers on dynamic ports 3 peers
 	//will generate exact 3 ports
 	filePath := baseDir
@@ -17,7 +17,7 @@ func StartTestKvServer(t *testing.T, nodeId int, baseDir string, numCluster int)
 	ports := util.DynamicPorts(numCluster)
 	curPersister := persister.NewDiskPersister(filePath, nodeId)
 	rpcServer := rpc.NewServer()
-	kvSrv := StartKVServer(ports, nodeId, curPersister, -1, len(ports), rpcServer)
+	kvSrv := StartKVServer(ports, nodeId, curPersister, maxRaftState, len(ports), rpcServer)
 
 	listener, err := net.Listen("tcp", ports[nodeId])
 	if err != nil {

@@ -1,16 +1,18 @@
 package kv
 
 import (
-	"github.com/tobiabidoye/distributed-raft/cmd/util"
-	"github.com/tobiabidoye/distributed-raft/kvrpc"
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/tobiabidoye/distributed-raft/cmd/util"
+	"github.com/tobiabidoye/distributed-raft/kvrpc"
 )
 
 func TestReplicationKv(t *testing.T) {
 	baseDir := t.TempDir()
 	for i := range 3 {
-		StartTestKvServer(t, i, baseDir, 3)
+		StartTestKvServer(t, i, baseDir, 3, -1)
 	}
 
 	ports := util.DynamicPorts(3)
@@ -31,7 +33,7 @@ func TestOverWriteKv(t *testing.T) {
 
 	baseDir := t.TempDir()
 	for i := range 3 {
-		StartTestKvServer(t, i, baseDir, 3)
+		StartTestKvServer(t, i, baseDir, 3, -1)
 	}
 
 	ports := util.DynamicPorts(3)
@@ -70,7 +72,7 @@ func TestFollowerRecovery(t *testing.T) {
 	servers := []*KVServer{}
 	stopFuncs := []func(){}
 	for i := range 3 {
-		server, stopFunc := StartTestKvServer(t, i, baseDir, 3)
+		server, stopFunc := StartTestKvServer(t, i, baseDir, 3, -1)
 		servers = append(servers, server)
 		stopFuncs = append(stopFuncs, stopFunc)
 	}
@@ -102,7 +104,7 @@ func TestFollowerRecovery(t *testing.T) {
 	}
 
 	//now revive dead follower and kill leader
-	StartTestKvServer(t, toKill, baseDir, 3)
+	StartTestKvServer(t, toKill, baseDir, 3, -1)
 	//get leader from cluster
 	stopFuncs[leaderId]()
 	//now that leader is killed perform a get
@@ -120,4 +122,52 @@ func TestFollowerRecovery(t *testing.T) {
 	}
 
 	t.Log("Follower Recovery is Successful")
+}
+
+// create a clust
+func TestSnapshotKv(t *testing.T) {
+	baseDir := t.TempDir()
+	servers := []*KVServer{}
+	stopFuncs := []func(){}
+	for i := range 3 {
+		server, stopFunc := StartTestKvServer(t, i, baseDir, 3, 1000)
+		servers = append(servers, server)
+		stopFuncs = append(stopFuncs, stopFunc)
+	}
+
+	defer func() {
+		for _, stop := range stopFuncs {
+			if stop != nil {
+				stop()
+			}
+		}
+	}()
+
+	ports := util.DynamicPorts(3)
+	myClerk := MakeClerk(ports)
+	myClerk.Put("init_key", "init_val", 0)
+	leaderId := myClerk.leader
+	toKill := (leaderId + 1) % 3
+	kill := stopFuncs[toKill]
+	kill()
+	for i := range 90 {
+		//perform 90 puts
+		myClerk.Put(fmt.Sprintf("key_%d", i), fmt.Sprintf("value_%d", i), 0)
+	}
+
+	//restart server
+	_, stopFuncs[toKill] = StartTestKvServer(t, toKill, baseDir, 3, 1000)
+	stopFuncs[leaderId]()
+	time.Sleep(200 * time.Millisecond)
+	val, _, err := myClerk.Get("key_0")
+
+	//if it catches up despite being truncakk
+	if err != kvrpc.OK || val != "value_0" {
+		t.Fatalf("recovered follower missing pre-crash state 'value_0': got val=%q, err=%v", val, err)
+	}
+
+	val89, _, err89 := myClerk.Get("key_89")
+	if err89 != kvrpc.OK || val89 != "value_89" {
+		t.Fatalf("failed reading tail key_89: got val=%q, err=%v", val89, err89)
+	}
 }

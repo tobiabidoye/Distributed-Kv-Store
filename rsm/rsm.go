@@ -90,6 +90,7 @@ func (rsm *RSM) Submit(req any) (kvrpc.Err, any) {
 	//received command after applying
 	rsm.mu.Unlock()
 	ticker := time.NewTicker(20 * time.Millisecond)
+	timeout := time.After(1 * time.Second)
 	defer ticker.Stop()
 
 	//submit calls start so command is replicated to log and then waits for result to return to client
@@ -125,7 +126,14 @@ func (rsm *RSM) Submit(req any) (kvrpc.Err, any) {
 				return kvrpc.ErrWrongLeader, nil
 			}
 			rsm.mu.Unlock()
+
+		case <-timeout:
+			rsm.mu.Lock()
+			delete(rsm.db, commitIndex)
+			rsm.mu.Unlock()
+			return kvrpc.ErrWrongLeader, nil
 		}
+
 	}
 	//signal that leader stepped down
 	//return received command to the client
