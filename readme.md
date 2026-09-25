@@ -6,7 +6,7 @@ This project focuses on understanding how replicated state machines are built: l
 This project decouples and refactors core state machine replication and consensus mechanisms originally implemented in MIT 6.5840 into an open source, standalone key value database. 
 
 ## Status
-This project is experimental and educational. It is not production grade.
+This project is experimental and educational. It is not production grade. Note that all of my code was handrwritten aside from linearizability_test.go.
 
 ## Key Features & Architecture
 - **Consensus Engine:** Raft protocol handling leader election, log replication, and safety guarantees.
@@ -23,7 +23,7 @@ This project is experimental and educational. It is not production grade.
 - [x] Shared RPC server for Raft and KV services
 - [x] Expanded KV test suite
 - [ ] Fault injection tests
-- [ ] Linearizability checking with Porcupine
+- [x] Linearizability checking with Porcupine
 - [ ] Documentation and demo polish
 - [ ] Lsm Tree Storage Engine Extentsion
 ## Architecture

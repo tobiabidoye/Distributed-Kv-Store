@@ -2,3 +2,4 @@ raft_logs/
 *.bin
 *.tmp.idea/
 .idea/
+*.html
