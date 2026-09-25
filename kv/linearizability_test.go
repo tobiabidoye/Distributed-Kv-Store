@@ -1,85 +1,125 @@
 package kv
 
 import (
-	"maps"
+	"fmt"
+	"math/rand"
+	"sync"
+	"testing"
+	"time"
 
 	"github.com/anishathalye/porcupine"
+	"github.com/tobiabidoye/distributed-raft/cmd/util"
+	"github.com/tobiabidoye/distributed-raft/kvrpc"
 )
 
-// input to key value store
-type KvInput struct {
-	Op      string
-	Key     string
-	Value   string
-	Version uint64
-}
+// this function was written by an llm, did not feel like it was worth spending the time on it
+func TestPorcupineLinearizability(t *testing.T) {
+	baseDir := t.TempDir()
+	const numServers = 3
+	const numClients = 4
+	const opsPerClient = 25
 
-// output
-type KvOutput struct {
-	Value   string
-	Version uint64
-	Err     string
-}
+	stopFuncs := make([]func(), numServers)
+	defer func() {
+		for _, stop := range stopFuncs {
+			if stop != nil {
+				stop()
+			}
+		}
+	}()
 
-type KvState struct {
-	Data map[string]struct {
-		Value   string
-		Version uint64
+	for i := range numServers {
+		_, stopFuncs[i] = StartTestKvServer(t, i, baseDir, numServers, -1)
 	}
-}
 
-var kvModel = porcupine.Model{
-	Init: func() any {
-		return KvState{
-			Data: make(map[string]struct {
-				Value   string
-				Version uint64
-			}),
-		}
-	},
-	Step: func(state, input, output any) (bool, any) {
-		st := state.(KvState)
-		inp := input.(KvInput)
-		out := output.(KvOutput)
+	ports := util.DynamicPorts(numServers)
 
-		next := KvState{
-			Data: make(map[string]struct {
-				Value   string
-				Version uint64
-			}),
-		}
+	var opsMu sync.Mutex
+	var operations []porcupine.Operation
 
-		maps.Copy(next.Data, st.Data)
-		entry, exists := next.Data[inp.Key]
+	var wg sync.WaitGroup
+	keys := []string{"key_a", "key_b"}
 
-		switch inp.Op {
-		//what get result is supposed to be and state after a get
-		case "Get":
-			if !exists {
-				return out.Err == "ErrNoKey", next
-			}
-			match := (out.Err == "OK" && out.Value == entry.Value && out.Version == entry.Version)
-			return match, next
-		case "Put":
-			currentVer := entry.Version
-			if !exists {
-				currentVer = 0
-			}
+	for clientId := range numClients {
+		wg.Add(1)
+		go func(cid int) {
+			defer wg.Done()
+			clerk := MakeClerk(ports)
+			r := rand.New(rand.NewSource(int64(cid + 100)))
 
-			if inp.Version == currentVer {
-				if out.Err != "OK" {
-					return false, next
+			for j := range opsPerClient {
+				key := keys[r.Intn(len(keys))]
+				isPut := r.Float32() < 0.6
+
+				if isPut {
+					_, curVer, errGet := clerk.Get(key)
+					reqVersion := uint64(curVer)
+					if errGet == kvrpc.ErrNoKey {
+						reqVersion = 0
+					}
+
+					val := fmt.Sprintf("val_%d_%d", cid, j)
+
+					callTime := time.Now().UnixNano()
+					err := clerk.Put(key, val, kvrpc.Tversion(reqVersion))
+					returnTime := time.Now().UnixNano()
+
+					errStr := "OK"
+					if err == kvrpc.ErrVersion {
+						errStr = "ErrVersion"
+					} else if err != kvrpc.OK {
+						errStr = string(err)
+					}
+
+					op := porcupine.Operation{
+						ClientId: cid,
+						Input:    KvInput{Op: "Put", Key: key, Value: val, Version: reqVersion},
+						Output:   KvOutput{Err: errStr},
+						Call:     callTime,
+						Return:   returnTime,
+					}
+
+					opsMu.Lock()
+					operations = append(operations, op)
+					opsMu.Unlock()
+				} else {
+					callTime := time.Now().UnixNano()
+					val, ver, err := clerk.Get(key)
+					returnTime := time.Now().UnixNano()
+
+					errStr := "OK"
+					if err == kvrpc.ErrNoKey {
+						errStr = "ErrNoKey"
+					} else if err != kvrpc.OK {
+						errStr = string(err)
+					}
+
+					op := porcupine.Operation{
+						ClientId: cid,
+						Input:    KvInput{Op: "Get", Key: key},
+						Output:   KvOutput{Value: val, Version: uint64(ver), Err: errStr},
+						Call:     callTime,
+						Return:   returnTime,
+					}
+
+					opsMu.Lock()
+					operations = append(operations, op)
+					opsMu.Unlock()
 				}
-
-				next.Data[inp.Key] = struct {
-					Value   string
-					Version uint64
-				}{Value: inp.Value, Version: currentVer + 1}
-				return true, next
-			} else {
-				return out.Err == "ErrVersion", next
 			}
-		}
-		return false, next
-	},
+		}(clientId)
+	}
+
+	wg.Wait()
+
+	t.Logf("Collected %d concurrent operations. Verifying with Porcupine...", len(operations))
+
+	// Step 3: Check linearizability!
+	res, info := porcupine.CheckOperationsVerbose(kvModel, operations, 0)
+	if res != porcupine.Ok {
+		porcupine.VisualizePath(kvModel, info, "linearizability_violation.html")
+		t.Fatalf("history is not linearizable! Visualization written to linearizability_violation.html")
+	}
+
+	t.Log("PASS: History is provably linearizable!")
 }
