@@ -65,6 +65,7 @@ func StartTestKvServer(t *testing.T, nodeId int, baseDir string, numCluster int,
 		kvSrv.rsm.Raft().KillProcess()
 		time.Sleep(30 * time.Millisecond)
 	}
+
 	t.Cleanup(
 		cleanupFunc,
 	)

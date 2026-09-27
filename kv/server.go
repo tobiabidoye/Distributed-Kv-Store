@@ -37,6 +37,9 @@ type ValueVersion struct {
 	VersionNo int
 }
 
+func (kv *KVServer) Kill() {
+	kv.rsm.Raft().KillProcess()
+}
 func (kv *KVServer) DoOp(req any) any {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()

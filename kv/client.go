@@ -27,8 +27,9 @@ func MakeClerk(servers []string) *Clerk {
 func (ck *Clerk) getClient(serverIdx int) (*rpc.Client, error) {
 	ck.mu.Lock()
 	if ck.clients[serverIdx] != nil {
+		cur := ck.clients[serverIdx]
 		ck.mu.Unlock()
-		return ck.clients[serverIdx], nil
+		return cur, nil
 	}
 
 	//fix for tcp consistency so that we do not have freezing for unreachable servers
