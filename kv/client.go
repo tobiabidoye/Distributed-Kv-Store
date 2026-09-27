@@ -3,7 +3,9 @@ package kv
 import (
 	"log"
 	"math/rand/v2"
+	"net"
 	"net/rpc"
+	"sync"
 	"time"
 
 	"github.com/tobiabidoye/distributed-raft/kvrpc"
@@ -14,6 +16,7 @@ type Clerk struct {
 	leader  int
 	clerkId int64
 	clients []*rpc.Client
+	mu      sync.Mutex
 }
 
 func MakeClerk(servers []string) *Clerk {
@@ -22,25 +25,50 @@ func MakeClerk(servers []string) *Clerk {
 }
 
 func (ck *Clerk) getClient(serverIdx int) (*rpc.Client, error) {
+	ck.mu.Lock()
 	if ck.clients[serverIdx] != nil {
+		ck.mu.Unlock()
 		return ck.clients[serverIdx], nil
 	}
 
-	client, err := rpc.Dial("tcp", ck.servers[serverIdx])
+	//fix for tcp consistency so that we do not have freezing for unreachable servers
+	ck.mu.Unlock()
+	conn, err := net.DialTimeout("tcp", ck.servers[serverIdx], 500*time.Millisecond)
 
 	if err != nil {
 		return nil, err
 	}
 
-	ck.clients[serverIdx] = client
+	client := rpc.NewClient(conn)
+	ck.mu.Lock()
+	if ck.clients[serverIdx] == nil {
+		ck.clients[serverIdx] = client
+	} else {
+		//close pointless connection
+		client.Close()
+		client = ck.clients[serverIdx]
+	}
+
+	ck.mu.Unlock()
 	return client, nil
 }
+
+func (ck *Clerk) DropClient(serverIdx int, client *rpc.Client) {
+	ck.mu.Lock()
+	defer ck.mu.Unlock()
+	if ck.clients[serverIdx] == client {
+		if client != nil {
+			client.Close()
+		}
+		ck.clients[serverIdx] = nil
+	}
+}
+
 func (ck *Clerk) Leader() int {
 	return ck.leader
 }
 
 func (ck *Clerk) Get(key string) (string, kvrpc.Tversion, kvrpc.Err) {
-
 	for {
 		args := kvrpc.GetArgs{Key: key}
 		reply := kvrpc.GetReply{}
@@ -61,8 +89,7 @@ func (ck *Clerk) Get(key string) (string, kvrpc.Tversion, kvrpc.Err) {
 					return reply.Value, reply.Version, reply.Err
 				}
 			} else {
-				client.Close()
-				ck.clients[ck.leader] = nil
+				ck.DropClient(ck.leader, client)
 			}
 
 			//loop through the leaders if it fails
@@ -97,8 +124,7 @@ func (ck *Clerk) Put(key string, value string, version kvrpc.Tversion) kvrpc.Err
 					return reply.Err
 				}
 			} else {
-				client.Close()
-				ck.clients[ck.leader] = nil
+				ck.DropClient(ck.leader, client)
 			}
 
 		}

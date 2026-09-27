@@ -35,7 +35,7 @@ func (dp *DiskPersister) Save(raftState []byte, snapshotState []byte) {
 	}
 
 	if snapshotState != nil {
-		if err := dp.AtomicWrite(dp.statePath, raftState); err != nil {
+		if err := dp.AtomicWrite(dp.snapshotPath, snapshotState); err != nil {
 			log.Fatalf("Persister error from writing to disk %v", err)
 		}
 	}
