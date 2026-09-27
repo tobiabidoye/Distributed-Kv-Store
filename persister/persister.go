@@ -2,7 +2,9 @@ package persister
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -27,28 +29,57 @@ func (dp *DiskPersister) Save(raftState []byte, snapshotState []byte) {
 	defer dp.mu.Unlock()
 
 	if raftState != nil {
-		dp.AtmomicWrite(dp.statePath, raftState)
+		if err := dp.AtomicWrite(dp.statePath, raftState); err != nil {
+			log.Fatalf("Persister error from writing to disk %v", err)
+		}
 	}
 
 	if snapshotState != nil {
-		dp.AtmomicWrite(dp.snapshotPath, snapshotState)
+		if err := dp.AtomicWrite(dp.statePath, raftState); err != nil {
+			log.Fatalf("Persister error from writing to disk %v", err)
+		}
 	}
 }
 
-func (dp *DiskPersister) AtmomicWrite(path string, data []byte) {
+// productionized changes to atomic write for aws
+func (dp *DiskPersister) AtomicWrite(path string, data []byte) error {
 	tmpPath := path + ".tmp"
 	//temp file opening
 	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+
 	if err != nil {
-		return
+		return err
 	}
 
-	f.Write(data)
-	if !dp.DisableSync {
-		f.Sync()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
 	}
-	f.Close()
-	os.Rename(tmpPath, path)
+
+	if !dp.DisableSync {
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return err
+		}
+	}
+
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+
+	//ensure everything is flushed properly to disk
+	if !dp.DisableSync {
+		dirPath := filepath.Dir(path)
+		if df, err := os.Open(dirPath); err == nil {
+			_ = df.Sync()
+			_ = df.Close()
+		}
+	}
+	return nil
 }
 
 func (dp *DiskPersister) ReadRaftState() []byte {
