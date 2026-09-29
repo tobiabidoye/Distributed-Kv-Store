@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  raft0:
+    build: .
+    container_name: raft-node-0
+    command: [
+      "-id=0",
+      "-peers=raft0:8000,raft1:8000,raft2:8000"
+    ]
+    volumes:
+      - raft0_data:/raft_logs
+    ports:
+      - "8000:8000"
+    networks:
+      - raft-cluster
+
+  raft1:
+    build: .
+    container_name: raft-node-1
+    command: [
+      "-id=1",
+      "-peers=raft0:8000,raft1:8000,raft2:8000"
+    ]
+    volumes:
+      - raft1_data:/raft_logs
+    ports:
+      - "8001:8000"
+    networks:
+      - raft-cluster
+
+  raft2:
+    build: .
+    container_name: raft-node-2
+    command: [
+      "-id=2",
+      "-peers=raft0:8000,raft1:8000,raft2:8000"
+    ]
+    volumes:
+      - raft2_data:/raft_logs
+    ports:
+      - "8002:8000"
+    networks:
+      - raft-cluster
+
+volumes:
+  raft0_data:
+  raft1_data:
+  raft2_data:
+
+networks:
+  raft-cluster:
+    driver: bridge
