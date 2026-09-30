@@ -69,7 +69,6 @@ func main() {
 	fmt.Printf("\n=== Starting %s Benchmark ===\n", strings.ToUpper(*workload))
 	fmt.Printf("Duration: %v | Concurrency: %d workers | Payload: %d bytes\n", *duration, *concurrency, *valSize)
 	startTime := time.Now()
-
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
 		workerId := i
@@ -79,25 +78,35 @@ func main() {
 			latencies := make([]time.Duration, 0, 5000)
 			r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id)))
 
+			var keyVersion map[string]int
+			keyVersion = make(map[string]int)
 			for {
 				select {
 				case <-stopChan:
 					workerLatencies[id] = latencies
 					return
 				default:
-					key := fmt.Sprintf("bench-key-%d", r.Intn(1000))
+					key := fmt.Sprintf("bench-key-%d-%d", r.Intn(1000), id)
+					version := 0
+					if _, ok := keyVersion[key]; ok {
+						version = keyVersion[key]
+					}
 					t0 := time.Now()
 					var err kvrpc.Err
 					switch *workload {
 					case "put":
-						err = clerk.Put(key, valPayload, 0)
+						err = clerk.Put(key, valPayload, kvrpc.Tversion(version))
+						version += 1
+						keyVersion[key] = version
 					case "get":
 						_, _, err = clerk.Get(key)
 					case "mixed":
 						if r.Float64() < 0.80 {
 							_, _, err = clerk.Get(key)
 						} else {
-							err = clerk.Put(key, valPayload, 0)
+							err = clerk.Put(key, valPayload, kvrpc.Tversion(version))
+							version += 1
+							keyVersion[key] = version
 						}
 					}
 
