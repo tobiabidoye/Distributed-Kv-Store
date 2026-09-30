@@ -57,19 +57,18 @@ Known limits: histories are checked on a stable cluster, fault injection *during
 linearizability checking is planned. The `ErrMaybe` model branch covers an
 ambiguous-ack path that the current harness does not yet generate.
 
-## Benchmarks
+### Benchmarks
 
-_Local: 3 nodes, 1 machine. Cloud: 3 × t3.small across AZs, client on a 4th instance —
-results to be populated after the deployment run._
+Local: 3 nodes, 1 machine. Cloud: 3 × t3.small across AZs, client on a 4th instance.
 
 | Metric | Local | AWS |
 |---|---|---|
-| Put throughput (ops/s) | _pending_ | _pending_ |
-| Get throughput (ops/s) | _pending_ | _pending_ |
-| p50 / p99 latency | _pending_ | _pending_ |
-| Leader re-election time after kill | _pending_ | _pending_ |
-| Node catch-up time after restart (snapshot) | _pending_ | _pending_ |
-
+| Put throughput (ops/s) | 27.29 ops/sec | *pending* |
+| Get throughput (ops/s) | 44.71 ops/sec | *pending* |
+| Put p50 / p99 latency | 299.7ms / 506.6ms | *pending* |
+| Get p50 / p99 latency | 341.3ms / 557.9ms | *pending* |
+| Leader re-election time after kill | *pending* | *pending* |
+| Node catch-up time after restart (snapshot) | *pending* | *pending* |
 ## Failure modes
 
 | Injected failure | Expected behavior | Observed |
