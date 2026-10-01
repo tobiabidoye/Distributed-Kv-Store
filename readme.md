@@ -128,7 +128,9 @@ no regressions when storage changes.
 ## Origin
 Built as a standalone system after implementing MIT 6.5840's labs, the transport layer,
 persistence, versioning/dedup semantics, snapshot integration, and test/verification
-infrastructure here are original work
+infrastructure here are original work. Also made significant code changes for the core raft and key value
+store implementations so that the implementation would actually work on real hardware and not just a lab
+testing harness.
 
 ## Authorship
 All systems code (Raft, RSM, KV, persister, client, server) is written by hand. The
