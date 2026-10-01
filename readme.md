@@ -63,10 +63,10 @@ Local: 3 nodes, 1 machine. Cloud: 3 × t3.small across AZs, client on a 4th inst
 
 | Metric | Local | AWS |
 |---|---|---|
-| Put throughput (ops/s) | 48.77 ops/sec | *pending* |
-| Get throughput (ops/s) | 44.71 ops/sec | *pending* |
-| Put p50 / p99 latency | 315.5ms / 502.8ms | *pending* |
-| Get p50 / p99 latency | 341.3ms / 557.9ms | *pending* |
+| Put throughput (ops/s) | 48.77 ops/sec | 110.73 ops/sec |
+| Get throughput (ops/s) | 44.71 ops/sec | 45.68 ops/sec  |
+| Put p50 / p99 latency | 315.5ms / 502.8ms | 143.1ms / 290.1ms |
+| Get p50 / p99 latency | 341.3ms / 557.9ms | 334.5ms / 576.4ms |
 | Leader re-election time after kill | *pending* | *pending* |
 | Node catch-up time after restart (snapshot) | *pending* | *pending* |
 ## Failure modes
@@ -118,7 +118,7 @@ no regressions when storage changes.
 - [x] Shared RPC server for Raft and KV services
 - [x] Expanded KV test suite
 - [x] Linearizability checking with Porcupine
-- [ ] AWS deployment + cloud benchmark table
+- [x] AWS deployment + cloud benchmark table
 - [ ] Fault injection tests
 - [ ] Documentation and demo polish
 - [ ] Observability: metrics endpoint (term, commit index, log length, snapshot count)
