@@ -86,10 +86,14 @@ func main() {
 					workerLatencies[id] = latencies
 					return
 				default:
-					key := fmt.Sprintf("bench-key-%d-%d", r.Intn(1000), id)
+
 					version := 0
-					if _, ok := keyVersion[key]; ok {
-						version = keyVersion[key]
+					key := fmt.Sprintf("bench-key-%d", r.Intn(1000))
+					if *workload == "put" {
+						key := fmt.Sprintf("bench-key-%d-%d", r.Intn(1000), id)
+						if _, ok := keyVersion[key]; ok {
+							version = keyVersion[key]
+						}
 					}
 					t0 := time.Now()
 					var err kvrpc.Err
