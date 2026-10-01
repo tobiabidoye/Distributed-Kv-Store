@@ -63,9 +63,9 @@ Local: 3 nodes, 1 machine. Cloud: 3 × t3.small across AZs, client on a 4th inst
 
 | Metric | Local | AWS |
 |---|---|---|
-| Put throughput (ops/s) | 27.29 ops/sec | *pending* |
+| Put throughput (ops/s) | 48.77 ops/sec | *pending* |
 | Get throughput (ops/s) | 44.71 ops/sec | *pending* |
-| Put p50 / p99 latency | 299.7ms / 506.6ms | *pending* |
+| Put p50 / p99 latency | 315.5ms / 502.8ms | *pending* |
 | Get p50 / p99 latency | 341.3ms / 557.9ms | *pending* |
 | Leader re-election time after kill | *pending* | *pending* |
 | Node catch-up time after restart (snapshot) | *pending* | *pending* |
